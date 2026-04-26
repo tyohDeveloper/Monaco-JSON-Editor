@@ -6,6 +6,7 @@ import { JsonTreePane } from "../tree/JsonTreePane";
 import { InspectorPane } from "../inspector/InspectorPane";
 import { SourcePane } from "../source/SourcePane";
 import { SchemaErrorsPanel } from "../schema/SchemaErrorsPanel";
+import { FindBar } from "../find/FindBar";
 import { useJsonStore } from "../../store/useJsonStore";
 
 function isEditableTarget(target: EventTarget | null): boolean {
@@ -47,6 +48,43 @@ function useUndoRedoHotkeys() {
   }, []);
 }
 
+function useFindHotkey() {
+  useEffect(() => {
+    const handler = (e: KeyboardEvent) => {
+      const mod = e.metaKey || e.ctrlKey;
+      const key = e.key.toLowerCase();
+      // Ctrl/Cmd+F: open the find bar (focusing its input). We swallow this
+      // even when triggered from inside a text field so the browser's native
+      // page-find dialog doesn't steal it.
+      if (mod && key === "f" && !e.shiftKey && !e.altKey) {
+        e.preventDefault();
+        const state = useJsonStore.getState();
+        if (state.findOpen) {
+          // Already open: re-focus the input via a remount-style refocus.
+          state.closeFind();
+          window.requestAnimationFrame(() => {
+            useJsonStore.getState().openFind();
+          });
+        } else {
+          state.openFind();
+        }
+        return;
+      }
+      // Esc: close the find bar (only if it's open and we're not actively
+      // editing something else like the source pane).
+      if (key === "escape") {
+        const state = useJsonStore.getState();
+        if (state.findOpen) {
+          e.preventDefault();
+          state.closeFind();
+        }
+      }
+    };
+    window.addEventListener("keydown", handler);
+    return () => window.removeEventListener("keydown", handler);
+  }, []);
+}
+
 function ToastStack() {
   const toasts = useJsonStore((s) => s.toasts);
   if (toasts.length === 0) return null;
@@ -73,9 +111,11 @@ function ToastStack() {
 
 export function AppShell() {
   useUndoRedoHotkeys();
+  useFindHotkey();
   return (
     <div className="app-shell">
       <Toolbar />
+      <FindBar />
       <PaneLayout
         left={<JsonTreePane />}
         middle={<InspectorPane />}

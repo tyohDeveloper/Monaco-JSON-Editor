@@ -1,8 +1,13 @@
 import { create } from "zustand";
 import { createAjvValidator, type Validator } from "vanilla-jsoneditor";
 import addFormats from "ajv-formats";
-import type { JsonPath, JsonValue } from "../lib/jsonPath";
-import { getAtPath, pathsEqual } from "../lib/jsonPath";
+import type { FindScope, JsonPath, JsonValue } from "../lib/jsonPath";
+import {
+  evaluateJsonPath,
+  findInDoc,
+  getAtPath,
+  pathsEqual,
+} from "../lib/jsonPath";
 import {
   setAtPath,
   deleteAtPath,
@@ -55,6 +60,19 @@ export interface JsonState {
   expandAllTick: number;
   collapseAllTick: number;
 
+  // Find / JSONPath state. The find bar is a single overlay with two inputs:
+  // a substring search and a JSONPath expression. Both produce ordered match
+  // lists that the user can step through with prev/next.
+  findOpen: boolean;
+  findQuery: string;
+  findCaseSensitive: boolean;
+  findScope: FindScope;
+  findMatches: JsonPath[];
+  findIndex: number; // -1 when there are no matches
+  pathQuery: string;
+  pathMatches: JsonPath[];
+  pathIndex: number;
+  pathError: string | null;
   // JSON Schema state
   schema: JsonValue | null;
   schemaName: string | null;
@@ -95,6 +113,19 @@ export interface JsonState {
   undo: () => void;
   redo: () => void;
 
+  // Find / JSONPath actions
+  openFind: () => void;
+  closeFind: () => void;
+  setFindQuery: (q: string) => void;
+  setFindCaseSensitive: (v: boolean) => void;
+  setFindScope: (s: FindScope) => void;
+  goToFindMatch: (index: number) => void;
+  nextFindMatch: () => void;
+  prevFindMatch: () => void;
+  setPathQuery: (q: string) => void;
+  goToPathMatch: (index: number) => void;
+  nextPathMatch: () => void;
+  prevPathMatch: () => void;
   // Toolbar utilities
   loadSample: () => void;
 
@@ -222,6 +253,16 @@ export const useJsonStore = create<JsonState>((set, get) => ({
   expandAllTick: 0,
   collapseAllTick: 0,
 
+  findOpen: false,
+  findQuery: "",
+  findCaseSensitive: false,
+  findScope: "both",
+  findMatches: [],
+  findIndex: -1,
+  pathQuery: "",
+  pathMatches: [],
+  pathIndex: -1,
+  pathError: null,
   schema: null,
   schemaName: null,
   schemaErrors: [],
@@ -413,6 +454,134 @@ export const useJsonStore = create<JsonState>((set, get) => ({
     });
   },
 
+  openFind: () => set({ findOpen: true }),
+  closeFind: () => set({ findOpen: false }),
+
+  setFindQuery: (q) => {
+    const s = get();
+    const matches = findInDoc(s.doc, q, {
+      caseSensitive: s.findCaseSensitive,
+      scope: s.findScope,
+    });
+    const newIndex = matches.length === 0 ? -1 : 0;
+    set({ findQuery: q, findMatches: matches, findIndex: newIndex });
+    if (newIndex >= 0) {
+      set({ selectedPath: matches[newIndex]!, sourceDraft: null, validationError: null });
+    }
+  },
+
+  setFindCaseSensitive: (v) => {
+    const s = get();
+    const matches = findInDoc(s.doc, s.findQuery, {
+      caseSensitive: v,
+      scope: s.findScope,
+    });
+    const newIndex = matches.length === 0 ? -1 : 0;
+    set({ findCaseSensitive: v, findMatches: matches, findIndex: newIndex });
+    if (newIndex >= 0) {
+      set({ selectedPath: matches[newIndex]!, sourceDraft: null, validationError: null });
+    }
+  },
+
+  setFindScope: (scope) => {
+    const s = get();
+    const matches = findInDoc(s.doc, s.findQuery, {
+      caseSensitive: s.findCaseSensitive,
+      scope,
+    });
+    const newIndex = matches.length === 0 ? -1 : 0;
+    set({ findScope: scope, findMatches: matches, findIndex: newIndex });
+    if (newIndex >= 0) {
+      set({ selectedPath: matches[newIndex]!, sourceDraft: null, validationError: null });
+    }
+  },
+
+  goToFindMatch: (index) => {
+    const s = get();
+    if (s.findMatches.length === 0) return;
+    const wrapped =
+      ((index % s.findMatches.length) + s.findMatches.length) %
+      s.findMatches.length;
+    set({
+      findIndex: wrapped,
+      selectedPath: s.findMatches[wrapped]!,
+      sourceDraft: null,
+      validationError: null,
+    });
+  },
+
+  nextFindMatch: () => {
+    const s = get();
+    if (s.findMatches.length === 0) return;
+    s.goToFindMatch(s.findIndex < 0 ? 0 : s.findIndex + 1);
+  },
+
+  prevFindMatch: () => {
+    const s = get();
+    if (s.findMatches.length === 0) return;
+    s.goToFindMatch(s.findIndex < 0 ? s.findMatches.length - 1 : s.findIndex - 1);
+  },
+
+  setPathQuery: (q) => {
+    const s = get();
+    const trimmed = q.trim();
+    if (trimmed.length === 0) {
+      set({
+        pathQuery: q,
+        pathMatches: [],
+        pathIndex: -1,
+        pathError: null,
+      });
+      return;
+    }
+    let matches: JsonPath[] = [];
+    let err: string | null = null;
+    try {
+      matches = evaluateJsonPath(s.doc, trimmed);
+    } catch (e) {
+      err = (e as Error).message;
+    }
+    const newIndex = matches.length === 0 ? -1 : 0;
+    set({
+      pathQuery: q,
+      pathMatches: matches,
+      pathIndex: newIndex,
+      pathError: err,
+    });
+    if (newIndex >= 0) {
+      set({
+        selectedPath: matches[newIndex]!,
+        sourceDraft: null,
+        validationError: null,
+      });
+    }
+  },
+
+  goToPathMatch: (index) => {
+    const s = get();
+    if (s.pathMatches.length === 0) return;
+    const wrapped =
+      ((index % s.pathMatches.length) + s.pathMatches.length) %
+      s.pathMatches.length;
+    set({
+      pathIndex: wrapped,
+      selectedPath: s.pathMatches[wrapped]!,
+      sourceDraft: null,
+      validationError: null,
+    });
+  },
+
+  nextPathMatch: () => {
+    const s = get();
+    if (s.pathMatches.length === 0) return;
+    s.goToPathMatch(s.pathIndex < 0 ? 0 : s.pathIndex + 1);
+  },
+
+  prevPathMatch: () => {
+    const s = get();
+    if (s.pathMatches.length === 0) return;
+    s.goToPathMatch(s.pathIndex < 0 ? s.pathMatches.length - 1 : s.pathIndex - 1);
+  },
   loadSample: () =>
     set((s) => ({
       ...pushHistory(s),
@@ -493,6 +662,58 @@ useJsonStore.subscribe((state, prev) => {
   });
 });
 
+// Recompute find / JSONPath matches when the document changes (e.g. after an
+// edit or undo). The match list is order-stable so we try to keep the user
+// pinned to the same path; if it's gone we clamp to the nearest valid index.
+useJsonStore.subscribe((state, prev) => {
+  if (state.doc === prev.doc) return;
+  const updates: Partial<JsonState> = {};
+
+  if (state.findQuery.length > 0) {
+    const previousActive =
+      state.findIndex >= 0 ? state.findMatches[state.findIndex] ?? null : null;
+    const matches = findInDoc(state.doc, state.findQuery, {
+      caseSensitive: state.findCaseSensitive,
+      scope: state.findScope,
+    });
+    let newIndex = matches.length === 0 ? -1 : 0;
+    if (previousActive !== null) {
+      const idx = matches.findIndex((p) => pathsEqual(p, previousActive));
+      if (idx >= 0) newIndex = idx;
+      else if (matches.length > 0) {
+        newIndex = Math.min(state.findIndex, matches.length - 1);
+        if (newIndex < 0) newIndex = 0;
+      }
+    }
+    updates.findMatches = matches;
+    updates.findIndex = newIndex;
+  }
+
+  if (state.pathQuery.trim().length > 0) {
+    const previousActive =
+      state.pathIndex >= 0 ? state.pathMatches[state.pathIndex] ?? null : null;
+    let matches: JsonPath[] = [];
+    let err: string | null = null;
+    try {
+      matches = evaluateJsonPath(state.doc, state.pathQuery.trim());
+    } catch (e) {
+      err = (e as Error).message;
+    }
+    let newIndex = matches.length === 0 ? -1 : 0;
+    if (previousActive !== null && matches.length > 0) {
+      const idx = matches.findIndex((p) => pathsEqual(p, previousActive));
+      if (idx >= 0) newIndex = idx;
+      else newIndex = Math.min(Math.max(state.pathIndex, 0), matches.length - 1);
+    }
+    updates.pathMatches = matches;
+    updates.pathIndex = newIndex;
+    updates.pathError = err;
+  }
+
+  if (Object.keys(updates).length > 0) {
+    useJsonStore.setState(updates);
+  }
+});
 function isAncestor(ancestor: JsonPath, descendant: JsonPath): boolean {
   if (ancestor.length >= descendant.length) return false;
   for (let i = 0; i < ancestor.length; i++) {

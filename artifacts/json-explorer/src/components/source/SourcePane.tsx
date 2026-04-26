@@ -4,6 +4,10 @@ import type { editor } from "monaco-editor";
 import { useJsonStore, safeStringify } from "../../store/useJsonStore";
 import { getAtPath, pathToBreadcrumb } from "../../lib/jsonPath";
 
+function escapeRegExp(s: string): string {
+  return s.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+}
+
 export function SourcePane() {
   const doc = useJsonStore((s) => s.doc);
   const selectedPath = useJsonStore((s) => s.selectedPath);
@@ -22,6 +26,14 @@ export function SourcePane() {
   const dirty = sourceDraft !== null;
   const displayValue = sourceDraft ?? subtreeText;
   const editorRef = useRef<editor.IStandaloneCodeEditor | null>(null);
+  const monacoRef = useRef<Monaco | null>(null);
+  const decorationsRef = useRef<editor.IEditorDecorationsCollection | null>(
+    null,
+  );
+
+  const findOpen = useJsonStore((s) => s.findOpen);
+  const findQuery = useJsonStore((s) => s.findQuery);
+  const findCaseSensitive = useJsonStore((s) => s.findCaseSensitive);
 
   const handleApply = () => {
     if (!dirty) return;
@@ -57,6 +69,7 @@ export function SourcePane() {
 
   const handleMount: OnMount = (ed, monaco: Monaco) => {
     editorRef.current = ed;
+    monacoRef.current = monaco;
     monaco.languages.json.jsonDefaults.setDiagnosticsOptions({
       validate: true,
       allowComments: false,
@@ -66,6 +79,7 @@ export function SourcePane() {
     ed.addCommand(monaco.KeyMod.CtrlCmd | monaco.KeyCode.KeyS, () => {
       handleApply();
     });
+    decorationsRef.current = ed.createDecorationsCollection([]);
   };
 
   // Keep handlers fresh inside the closure registered with Monaco
@@ -74,6 +88,43 @@ export function SourcePane() {
     if (!ed) return;
     // No-op; Monaco re-binds via React render
   });
+
+  // Highlight find-bar matches inside the source pane. Recomputed whenever
+  // the visible text, the query, or case sensitivity changes. We use Monaco's
+  // model.findMatches API and apply a decoration class per range.
+  useEffect(() => {
+    const ed = editorRef.current;
+    const monaco = monacoRef.current;
+    const decorations = decorationsRef.current;
+    if (!ed || !monaco || !decorations) return;
+    const model = ed.getModel();
+    if (!model) return;
+    if (!findOpen || findQuery.length === 0) {
+      decorations.clear();
+      return;
+    }
+    const escaped = escapeRegExp(findQuery);
+    const matches = model.findMatches(
+      escaped,
+      true,
+      true,
+      findCaseSensitive,
+      null,
+      false,
+    );
+    decorations.set(
+      matches.map((m) => ({
+        range: m.range,
+        options: {
+          inlineClassName: "findbar-monaco-match",
+          stickiness: 1,
+        },
+      })),
+    );
+    if (matches.length > 0) {
+      ed.revealRangeInCenterIfOutsideViewport(matches[0]!.range);
+    }
+  }, [displayValue, findOpen, findQuery, findCaseSensitive]);
 
   const breadcrumb = pathToBreadcrumb(selectedPath);
 

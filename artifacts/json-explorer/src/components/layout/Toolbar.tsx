@@ -18,6 +18,10 @@ export function Toolbar() {
   const canUndo = useJsonStore((s) => s.past.length > 0);
   const canRedo = useJsonStore((s) => s.future.length > 0);
 
+  const findOpen = useJsonStore((s) => s.findOpen);
+  const openFind = useJsonStore((s) => s.openFind);
+  const closeFind = useJsonStore((s) => s.closeFind);
+
   const isMac =
     typeof navigator !== "undefined" &&
     /Mac|iPhone|iPad|iPod/.test(navigator.platform);
@@ -142,6 +146,15 @@ export function Toolbar() {
           title={`Redo (${modKey}+Shift+Z)`}
         >
           Redo
+        </button>
+        <div className="toolbar-divider" />
+        <button
+          className={`toolbar-btn${findOpen ? " active" : ""}`}
+          onClick={() => (findOpen ? closeFind() : openFind())}
+          title={`Find in document (${modKey}+F)`}
+          aria-pressed={findOpen}
+        >
+          Find
         </button>
         <div className="toolbar-divider" />
         <button

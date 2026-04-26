@@ -133,6 +133,11 @@ select {
   cursor: not-allowed;
 }
 
+.toolbar-btn.active {
+  background: var(--bg-active);
+  border-color: var(--border);
+}
+
 .toolbar-btn.primary {
   background: var(--accent);
   color: white;
@@ -912,6 +917,153 @@ select {
   font-size: 12px;
   color: var(--text);
   word-break: break-word;
+}
+
+/* Find bar */
+.findbar {
+  flex: 0 0 auto;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  padding: 6px 8px;
+  background: var(--bg-toolbar);
+  border-bottom: 1px solid var(--border);
+  user-select: none;
+}
+
+.findbar-row {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.findbar-label {
+  font-size: 11px;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+  color: var(--text-muted);
+  width: 38px;
+  flex-shrink: 0;
+}
+
+.findbar-input {
+  flex: 1 1 auto;
+  padding: 4px 8px;
+  font-size: 12px;
+  font-family: var(--font-sans);
+  min-width: 0;
+}
+
+.findbar-input.mono {
+  font-family: var(--font-mono);
+}
+
+.findbar-toggle {
+  flex-shrink: 0;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-width: 26px;
+  height: 24px;
+  padding: 0 6px;
+  background: var(--bg-pane);
+  border: 1px solid var(--border);
+  border-radius: 3px;
+  font-size: 11px;
+  font-family: var(--font-mono);
+  color: var(--text-muted);
+}
+
+.findbar-toggle:hover {
+  background: var(--bg-hover);
+  color: var(--text);
+}
+
+.findbar-toggle.active {
+  background: var(--accent);
+  border-color: var(--accent);
+  color: white;
+}
+
+.findbar-select {
+  flex: 0 0 auto;
+  width: auto;
+  padding: 3px 6px;
+  font-size: 11px;
+  font-family: var(--font-sans);
+  background: var(--bg-pane);
+  border: 1px solid var(--border);
+  border-radius: 3px;
+}
+
+.findbar-count {
+  flex: 0 0 auto;
+  min-width: 60px;
+  font-size: 11px;
+  font-family: var(--font-mono);
+  color: var(--text-muted);
+  text-align: right;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  max-width: 360px;
+}
+
+.findbar-count.empty {
+  color: var(--danger);
+}
+
+.findbar-count.error {
+  color: var(--danger);
+  text-align: left;
+  font-family: var(--font-mono);
+  font-size: 10px;
+  max-width: 480px;
+}
+
+.findbar-nav,
+.findbar-close {
+  flex-shrink: 0;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 24px;
+  height: 24px;
+  padding: 0;
+  background: var(--bg-pane);
+  border: 1px solid var(--border);
+  border-radius: 3px;
+  color: var(--text-muted);
+  font-size: 13px;
+  line-height: 1;
+}
+
+.findbar-nav:hover:not(:disabled),
+.findbar-close:hover {
+  background: var(--bg-hover);
+  color: var(--text);
+}
+
+.findbar-nav:disabled {
+  opacity: 0.4;
+  cursor: not-allowed;
+}
+
+.findbar-close {
+  width: 26px;
+  font-size: 16px;
+}
+
+.findbar-close:hover {
+  color: var(--danger);
+}
+
+/* Source pane Monaco match highlight (driven by FindBar) */
+.findbar-monaco-match {
+  background: rgba(255, 213, 79, 0.55);
+  border-radius: 2px;
+  outline: 1px solid rgba(214, 158, 0, 0.6);
 }
 
 /* Toast */
