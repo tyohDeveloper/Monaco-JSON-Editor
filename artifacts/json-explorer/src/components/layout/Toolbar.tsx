@@ -1,63 +1,21 @@
-import { useRef, useState } from "react";
+import { useState } from "react";
 import { useJsonStore } from "../../store/useJsonStore";
+import { pathToBreadcrumb } from "../../lib/jsonPath";
 import type { JsonValue } from "../../lib/jsonPath";
 
 export function Toolbar() {
-  const fileInputRef = useRef<HTMLInputElement>(null);
   const setDoc = useJsonStore((s) => s.setDoc);
   const loadSample = useJsonStore((s) => s.loadSample);
-  const clearDoc = useJsonStore((s) => s.clearDoc);
-  const doc = useJsonStore((s) => s.doc);
+  const triggerExpandAll = useJsonStore((s) => s.triggerExpandAll);
+  const triggerCollapseAll = useJsonStore((s) => s.triggerCollapseAll);
+  const formatSourceDraft = useJsonStore((s) => s.formatSourceDraft);
+  const selectedPath = useJsonStore((s) => s.selectedPath);
   const documentName = useJsonStore((s) => s.documentName);
   const pushToast = useJsonStore((s) => s.pushToast);
 
   const [pasteOpen, setPasteOpen] = useState(false);
   const [pasteText, setPasteText] = useState("");
   const [pasteError, setPasteError] = useState<string | null>(null);
-
-  const handleOpenFile = () => fileInputRef.current?.click();
-
-  const handleFileChange = async (e: React.ChangeEvent<HTMLInputElement>) => {
-    const file = e.target.files?.[0];
-    if (!file) return;
-    try {
-      const text = await file.text();
-      const parsed = JSON.parse(text) as JsonValue;
-      setDoc(parsed, file.name);
-      pushToast("success", `Loaded ${file.name}`);
-    } catch (err) {
-      pushToast("error", `Could not parse JSON: ${(err as Error).message}`);
-    } finally {
-      e.target.value = "";
-    }
-  };
-
-  const handleDownload = () => {
-    try {
-      const text = JSON.stringify(doc, null, 2);
-      const blob = new Blob([text], { type: "application/json" });
-      const url = URL.createObjectURL(blob);
-      const a = document.createElement("a");
-      a.href = url;
-      a.download = documentName.endsWith(".json") ? documentName : `${documentName}.json`;
-      document.body.appendChild(a);
-      a.click();
-      document.body.removeChild(a);
-      URL.revokeObjectURL(url);
-      pushToast("success", "Downloaded");
-    } catch (err) {
-      pushToast("error", `Download failed: ${(err as Error).message}`);
-    }
-  };
-
-  const handleCopyAll = async () => {
-    try {
-      await navigator.clipboard.writeText(JSON.stringify(doc, null, 2));
-      pushToast("success", "Copied JSON to clipboard");
-    } catch (err) {
-      pushToast("error", `Copy failed: ${(err as Error).message}`);
-    }
-  };
 
   const handlePasteSubmit = () => {
     try {
@@ -72,39 +30,76 @@ export function Toolbar() {
     }
   };
 
+  const handleCopyPath = async () => {
+    const text = pathToBreadcrumb(selectedPath);
+    try {
+      await navigator.clipboard.writeText(text);
+      pushToast("success", `Copied path ${text}`);
+    } catch (err) {
+      pushToast("error", `Copy failed: ${(err as Error).message}`);
+    }
+  };
+
+  const handleFormat = () => {
+    try {
+      formatSourceDraft();
+    } catch (err) {
+      pushToast("error", `Cannot format: ${(err as Error).message}`);
+    }
+  };
+
   return (
     <>
       <div className="toolbar">
         <div className="toolbar-title">JSON Explorer</div>
-        <button className="toolbar-btn" onClick={handleOpenFile} title="Open a .json file">
-          Open…
+        <button
+          className="toolbar-btn"
+          onClick={loadSample}
+          title="Load the built-in sample document"
+        >
+          Load Sample
         </button>
-        <button className="toolbar-btn" onClick={() => setPasteOpen(true)} title="Paste JSON text">
-          Paste…
+        <button
+          className="toolbar-btn"
+          onClick={() => setPasteOpen(true)}
+          title="Paste a JSON document"
+        >
+          Paste JSON…
         </button>
         <div className="toolbar-divider" />
-        <button className="toolbar-btn" onClick={loadSample} title="Load sample document">
-          Sample
+        <button
+          className="toolbar-btn"
+          onClick={triggerExpandAll}
+          title="Expand all nodes in the tree"
+        >
+          Expand All
         </button>
-        <button className="toolbar-btn" onClick={clearDoc} title="Start with empty object">
-          New
+        <button
+          className="toolbar-btn"
+          onClick={triggerCollapseAll}
+          title="Collapse all nodes in the tree"
+        >
+          Collapse All
         </button>
         <div className="toolbar-divider" />
-        <button className="toolbar-btn" onClick={handleCopyAll} title="Copy entire JSON to clipboard">
-          Copy
+        <button
+          className="toolbar-btn"
+          onClick={handleFormat}
+          title="Pretty-print the source pane"
+        >
+          Format
         </button>
-        <button className="toolbar-btn primary" onClick={handleDownload} title="Download JSON file">
-          Download
+        <button
+          className="toolbar-btn"
+          onClick={handleCopyPath}
+          title="Copy the selected node's path"
+        >
+          Copy Path
         </button>
         <div className="toolbar-spacer" />
-        <span style={{ fontSize: 11, color: "var(--text-muted)" }}>{documentName}</span>
-        <input
-          type="file"
-          accept="application/json,.json,.txt"
-          ref={fileInputRef}
-          style={{ display: "none" }}
-          onChange={handleFileChange}
-        />
+        <span className="toolbar-doc" title={documentName}>
+          {documentName}
+        </span>
       </div>
 
       {pasteOpen && (

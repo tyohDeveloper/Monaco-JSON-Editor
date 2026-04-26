@@ -9,13 +9,18 @@ import {
   type JSONEditorSelection,
   type JSONSelection,
 } from "vanilla-jsoneditor";
+
 import { useJsonStore } from "../../store/useJsonStore";
 import type { JsonPath, JsonValue } from "../../lib/jsonPath";
+
+type VjeJsonPath = string[];
 
 interface EditorHandle {
   set?: (c: Content) => void;
   update?: (c: Content) => void;
   select?: (s: JSONEditorSelection | undefined) => void;
+  expand?: (path: VjeJsonPath, callback?: (path: VjeJsonPath) => boolean) => void;
+  collapse?: (path: VjeJsonPath, recursive?: boolean) => void;
   destroy: () => void;
 }
 
@@ -64,6 +69,8 @@ export function JsonTreePane() {
   const selectedPath = useJsonStore((s) => s.selectedPath);
   const setDoc = useJsonStore((s) => s.setDoc);
   const setSelectedPath = useJsonStore((s) => s.setSelectedPath);
+  const expandAllTick = useJsonStore((s) => s.expandAllTick);
+  const collapseAllTick = useJsonStore((s) => s.collapseAllTick);
 
   // Mount editor once
   useEffect(() => {
@@ -128,6 +135,30 @@ export function JsonTreePane() {
       /* ignore */
     }
   }, [doc]);
+
+  // Expand all on tick change
+  useEffect(() => {
+    if (expandAllTick === 0) return;
+    const e = editorRef.current;
+    if (!e || !e.expand) return;
+    try {
+      e.expand([], () => true);
+    } catch {
+      /* ignore */
+    }
+  }, [expandAllTick]);
+
+  // Collapse all on tick change
+  useEffect(() => {
+    if (collapseAllTick === 0) return;
+    const e = editorRef.current;
+    if (!e || !e.collapse) return;
+    try {
+      e.collapse([], true);
+    } catch {
+      /* ignore */
+    }
+  }, [collapseAllTick]);
 
   // Push selection into editor when it changes externally
   useEffect(() => {

@@ -26,7 +26,7 @@ function countNodes(value: unknown): number {
 export function StatusBar() {
   const doc = useJsonStore((s) => s.doc);
   const selectedPath = useJsonStore((s) => s.selectedPath);
-  const parseError = useJsonStore((s) => s.parseError);
+  const validationError = useJsonStore((s) => s.validationError);
 
   const selectedValue = getAtPath(doc, selectedPath);
   const t = nodeType(selectedValue);
@@ -55,7 +55,7 @@ export function StatusBar() {
       )}
       <span className="statusbar-item">Nodes: <strong style={{ color: "var(--text)" }}>{countNodes(doc)}</strong></span>
       <span className="statusbar-item">Size: <strong style={{ color: "var(--text)" }}>{byteSize(docText)}</strong></span>
-      {parseError ? (
+      {validationError ? (
         <span className="statusbar-item error">
           <span className="statusbar-dot err" />
           Source has errors

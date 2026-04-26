@@ -9,8 +9,6 @@ interface PaneLayoutProps {
   minPaneWidth?: number;
 }
 
-const STORAGE_KEY = "jsonExplorer.paneSizes.v1";
-
 export function PaneLayout({
   left,
   middle,
@@ -19,35 +17,21 @@ export function PaneLayout({
   initialRightPct = 36,
   minPaneWidth = 160,
 }: PaneLayoutProps) {
-  const [sizes, setSizes] = useState<{ left: number; right: number }>(() => {
-    try {
-      const raw = localStorage.getItem(STORAGE_KEY);
-      if (raw) {
-        const parsed = JSON.parse(raw) as { left: number; right: number };
-        if (
-          typeof parsed.left === "number" &&
-          typeof parsed.right === "number" &&
-          parsed.left + parsed.right < 90
-        ) {
-          return parsed;
-        }
-      }
-    } catch {
-      /* ignore */
-    }
-    return { left: initialLeftPct, right: initialRightPct };
+  // Pane sizes are kept in component state only — no persistence (per spec,
+  // the app is purely in-memory).
+  const [sizes, setSizes] = useState<{ left: number; right: number }>({
+    left: initialLeftPct,
+    right: initialRightPct,
   });
 
-  useEffect(() => {
-    try {
-      localStorage.setItem(STORAGE_KEY, JSON.stringify(sizes));
-    } catch {
-      /* ignore */
-    }
-  }, [sizes]);
-
   const containerRef = useRef<HTMLDivElement>(null);
-  const dragRef = useRef<{ which: "left" | "right"; startX: number; startLeft: number; startRight: number; width: number } | null>(null);
+  const dragRef = useRef<{
+    which: "left" | "right";
+    startX: number;
+    startLeft: number;
+    startRight: number;
+    width: number;
+  } | null>(null);
   const [dragging, setDragging] = useState<"left" | "right" | null>(null);
 
   const onMouseDown = useCallback(
