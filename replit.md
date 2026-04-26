@@ -32,8 +32,11 @@ See the `pnpm-workspace` skill for workspace structure, TypeScript setup, and pa
 - `artifacts/mockup-sandbox` (`/__mockup`) — design canvas / component preview sandbox.
 - `artifacts/json-explorer` (`/`) — **JSON Explorer**: a browser-based, Windows Explorer-style 3-pane JSON viewer/editor.
   - Stack: React + Vite + TypeScript, Zustand store, vanilla-jsoneditor (left tree), Monaco editor (right source), custom React inspector (middle).
-  - Layout: top toolbar (Open / Paste / Sample / New / Copy / Download), 3 resizable panes with persisted sizes, bottom status bar (path / type / counts / size / validity).
-  - Entirely client-side and in-memory; no backend, no persistence.
-  - Edits flow through Zustand: tree selection updates the inspector; inspector mutations (rename key, set value, type conversion, add child, delete) and source pane Apply all update the same store; tree pane is reactively re-rendered.
-  - Source parse errors do NOT destroy the document — they are surfaced as a banner + status bar indicator and Apply is disabled until the draft is valid.
-  - Source parse-error state is owned by the source pane / status bar and is never silently cleared by tree/inspector mutations.
+  - Layout: top toolbar with `Load Sample`, `Paste JSON…`, `Expand All`, `Collapse All`, `Format`, `Copy Path`; three resizable panes (sizes kept in component state only — no persistence); bottom status bar showing breadcrumb path, type, key/item count, total nodes, byte size, and a `Valid` / `Source has errors` indicator.
+  - Entirely client-side and in-memory: no backend, no localStorage, no file upload/download.
+  - Tree selection drives BOTH the inspector AND the source pane. The source pane always shows ONLY the selected subtree (sub-label `editing $.user.id` etc.) and Apply writes back at `selectedPath` via `setAtPath` — the rest of the document is left untouched.
+  - Switching selection or any external mutation discards any in-flight source draft so the right pane re-syncs to the new subtree.
+  - Source parse errors do NOT destroy the document — they surface as a banner + a status-bar indicator and Apply is disabled until the draft is valid.
+  - Inspector supports primitive editing, type conversion, key rename for any non-root object key, add child (object key + kind / array append), and delete with confirm.
+  - Expand All / Collapse All broadcast tick counters via the store; the tree pane subscribes and calls vanilla-jsoneditor's imperative `expand` / `collapse` methods.
+  - Store mutators throw on failure; UI callers wrap in try/catch and push success or error toasts.
