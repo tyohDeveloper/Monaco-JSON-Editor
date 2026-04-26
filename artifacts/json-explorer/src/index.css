@@ -119,13 +119,18 @@ select {
   white-space: nowrap;
 }
 
-.toolbar-btn:hover {
+.toolbar-btn:hover:not(:disabled) {
   background: var(--bg-hover);
   border-color: var(--border);
 }
 
-.toolbar-btn:active {
+.toolbar-btn:active:not(:disabled) {
   background: var(--bg-active);
+}
+
+.toolbar-btn:disabled {
+  opacity: 0.4;
+  cursor: not-allowed;
 }
 
 .toolbar-btn.primary {

@@ -13,6 +13,16 @@ export function Toolbar() {
   const documentName = useJsonStore((s) => s.documentName);
   const pushToast = useJsonStore((s) => s.pushToast);
 
+  const undo = useJsonStore((s) => s.undo);
+  const redo = useJsonStore((s) => s.redo);
+  const canUndo = useJsonStore((s) => s.past.length > 0);
+  const canRedo = useJsonStore((s) => s.future.length > 0);
+
+  const isMac =
+    typeof navigator !== "undefined" &&
+    /Mac|iPhone|iPad|iPod/.test(navigator.platform);
+  const modKey = isMac ? "⌘" : "Ctrl";
+
   const schemaName = useJsonStore((s) => s.schemaName);
   const loadSchema = useJsonStore((s) => s.loadSchema);
   const clearSchema = useJsonStore((s) => s.clearSchema);
@@ -115,6 +125,23 @@ export function Toolbar() {
           title="Paste a JSON document"
         >
           Paste JSON…
+        </button>
+        <div className="toolbar-divider" />
+        <button
+          className="toolbar-btn"
+          onClick={undo}
+          disabled={!canUndo}
+          title={`Undo (${modKey}+Z)`}
+        >
+          Undo
+        </button>
+        <button
+          className="toolbar-btn"
+          onClick={redo}
+          disabled={!canRedo}
+          title={`Redo (${modKey}+Shift+Z)`}
+        >
+          Redo
         </button>
         <div className="toolbar-divider" />
         <button

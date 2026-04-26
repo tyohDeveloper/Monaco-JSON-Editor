@@ -25,11 +25,23 @@ export interface SchemaError {
   severity: "warning" | "error" | "info" | string;
 }
 
+export interface HistoryEntry {
+  doc: JsonValue;
+  selectedPath: JsonPath;
+}
+
+export const MAX_HISTORY = 100;
+
 export interface JsonState {
   doc: JsonValue;
   selectedPath: JsonPath;
   documentName: string;
   toasts: Toast[];
+
+  // Undo/redo stacks. Each entry captures a snapshot of `doc` and
+  // `selectedPath` from before a mutation. Capped at MAX_HISTORY.
+  past: HistoryEntry[];
+  future: HistoryEntry[];
 
   // Source pane draft state. `null` means the source pane is in sync with the
   // selected subtree (display from `getAtPath(doc, selectedPath)`).
@@ -78,6 +90,10 @@ export interface JsonState {
   // Tree pane controls
   triggerExpandAll: () => void;
   triggerCollapseAll: () => void;
+
+  // Undo / redo
+  undo: () => void;
+  redo: () => void;
 
   // Toolbar utilities
   loadSample: () => void;
@@ -176,11 +192,29 @@ function schemaErrorsEqual(a: SchemaError[], b: SchemaError[]): boolean {
   return true;
 }
 
+function pushHistory(state: JsonState): {
+  past: HistoryEntry[];
+  future: HistoryEntry[];
+} {
+  const entry: HistoryEntry = {
+    doc: state.doc,
+    selectedPath: state.selectedPath,
+  };
+  const past =
+    state.past.length >= MAX_HISTORY
+      ? [...state.past.slice(state.past.length - MAX_HISTORY + 1), entry]
+      : [...state.past, entry];
+  return { past, future: [] };
+}
+
 export const useJsonStore = create<JsonState>((set, get) => ({
   doc: SAMPLE_DOC,
   selectedPath: [],
   documentName: "sample.json",
   toasts: [],
+
+  past: [],
+  future: [],
 
   sourceDraft: null,
   validationError: null,
@@ -196,6 +230,7 @@ export const useJsonStore = create<JsonState>((set, get) => ({
 
   setDoc: (next, name) =>
     set((s) => ({
+      ...pushHistory(s),
       doc: next,
       documentName: name ?? s.documentName,
       // Document changed under us — discard any in-flight source draft so the
@@ -208,60 +243,70 @@ export const useJsonStore = create<JsonState>((set, get) => ({
     const cur = get().selectedPath;
     if (pathsEqual(cur, path)) return;
     // Switching selection discards the current source draft (the right pane
-    // is now editing a different subtree).
+    // is now editing a different subtree). Selection changes are NOT pushed
+    // onto the undo stack on their own; they ride along with whatever
+    // mutation comes next.
     set({ selectedPath: path, sourceDraft: null, validationError: null });
   },
 
-  applySetValue: (path, value) => {
-    const next = setAtPath(get().doc, path, value);
-    set({ doc: next, sourceDraft: null, validationError: null });
-  },
-
-  applyRenameKey: (path, newKey) => {
-    const next = renameKey(get().doc, path, newKey);
-    const newPath = path.slice(0, -1).concat(newKey);
-    set({
-      doc: next,
-      selectedPath: newPath,
+  applySetValue: (path, value) =>
+    set((s) => ({
+      ...pushHistory(s),
+      doc: setAtPath(s.doc, path, value),
       sourceDraft: null,
       validationError: null,
-    });
-  },
+    })),
 
-  applyDelete: (path) => {
-    const next = deleteAtPath(get().doc, path);
-    const sel = get().selectedPath;
-    const newSel =
-      pathsEqual(sel, path) || isAncestor(path, sel)
-        ? path.slice(0, -1)
-        : sel;
-    set({
-      doc: next,
-      selectedPath: newSel,
-      sourceDraft: null,
-      validationError: null,
-    });
-  },
+  applyRenameKey: (path, newKey) =>
+    set((s) => {
+      const next = renameKey(s.doc, path, newKey);
+      const newPath = path.slice(0, -1).concat(newKey);
+      return {
+        ...pushHistory(s),
+        doc: next,
+        selectedPath: newPath,
+        sourceDraft: null,
+        validationError: null,
+      };
+    }),
 
-  applyAddChild: (parentPath, key, value) => {
-    const next = addChild(get().doc, parentPath, key, value);
-    const newPath: JsonPath =
-      key !== null
-        ? [...parentPath, key]
-        : (() => {
-            const target = getAtPath(get().doc, parentPath);
-            if (Array.isArray(target)) {
-              return [...parentPath, target.length];
-            }
-            return parentPath;
-          })();
-    set({
-      doc: next,
-      selectedPath: newPath,
-      sourceDraft: null,
-      validationError: null,
-    });
-  },
+  applyDelete: (path) =>
+    set((s) => {
+      const next = deleteAtPath(s.doc, path);
+      const newSel =
+        pathsEqual(s.selectedPath, path) || isAncestor(path, s.selectedPath)
+          ? path.slice(0, -1)
+          : s.selectedPath;
+      return {
+        ...pushHistory(s),
+        doc: next,
+        selectedPath: newSel,
+        sourceDraft: null,
+        validationError: null,
+      };
+    }),
+
+  applyAddChild: (parentPath, key, value) =>
+    set((s) => {
+      const next = addChild(s.doc, parentPath, key, value);
+      const newPath: JsonPath =
+        key !== null
+          ? [...parentPath, key]
+          : (() => {
+              const target = getAtPath(s.doc, parentPath);
+              if (Array.isArray(target)) {
+                return [...parentPath, target.length];
+              }
+              return parentPath;
+            })();
+      return {
+        ...pushHistory(s),
+        doc: next,
+        selectedPath: newPath,
+        sourceDraft: null,
+        validationError: null,
+      };
+    }),
 
   setSourceDraft: (text) => {
     if (text === null) {
@@ -278,20 +323,21 @@ export const useJsonStore = create<JsonState>((set, get) => ({
   },
 
   applySourceDraft: () => {
-    const { sourceDraft, selectedPath, doc } = get();
-    if (sourceDraft === null) {
+    const s = get();
+    if (s.sourceDraft === null) {
       throw new Error("Nothing to apply");
     }
     let parsed: JsonValue;
     try {
-      parsed = JSON.parse(sourceDraft) as JsonValue;
+      parsed = JSON.parse(s.sourceDraft) as JsonValue;
     } catch (e) {
       const msg = (e as Error).message;
       set({ validationError: msg });
       throw new Error(msg);
     }
-    const next = setAtPath(doc, selectedPath, parsed);
+    const next = setAtPath(s.doc, s.selectedPath, parsed);
     set({
+      ...pushHistory(s),
       doc: next,
       sourceDraft: null,
       validationError: null,
@@ -325,14 +371,57 @@ export const useJsonStore = create<JsonState>((set, get) => ({
   triggerCollapseAll: () =>
     set((s) => ({ collapseAllTick: s.collapseAllTick + 1 })),
 
-  loadSample: () =>
+  undo: () => {
+    const s = get();
+    if (s.past.length === 0) return;
+    const prev = s.past[s.past.length - 1]!;
+    const future = [
+      ...s.future,
+      { doc: s.doc, selectedPath: s.selectedPath },
+    ];
+    const cappedFuture =
+      future.length > MAX_HISTORY
+        ? future.slice(future.length - MAX_HISTORY)
+        : future;
     set({
+      doc: prev.doc,
+      selectedPath: prev.selectedPath,
+      past: s.past.slice(0, -1),
+      future: cappedFuture,
+      sourceDraft: null,
+      validationError: null,
+    });
+  },
+
+  redo: () => {
+    const s = get();
+    if (s.future.length === 0) return;
+    const next = s.future[s.future.length - 1]!;
+    const past = [
+      ...s.past,
+      { doc: s.doc, selectedPath: s.selectedPath },
+    ];
+    const cappedPast =
+      past.length > MAX_HISTORY ? past.slice(past.length - MAX_HISTORY) : past;
+    set({
+      doc: next.doc,
+      selectedPath: next.selectedPath,
+      past: cappedPast,
+      future: s.future.slice(0, -1),
+      sourceDraft: null,
+      validationError: null,
+    });
+  },
+
+  loadSample: () =>
+    set((s) => ({
+      ...pushHistory(s),
       doc: SAMPLE_DOC,
       selectedPath: [],
       documentName: "sample.json",
       sourceDraft: null,
       validationError: null,
-    }),
+    })),
 
   loadSchema: (text, name) => {
     let parsed: JsonValue;
