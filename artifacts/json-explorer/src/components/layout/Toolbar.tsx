@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useRef, useState, type ChangeEvent } from "react";
 import { useJsonStore } from "../../store/useJsonStore";
 import { pathToBreadcrumb } from "../../lib/jsonPath";
 import type { JsonValue } from "../../lib/jsonPath";
@@ -13,9 +13,19 @@ export function Toolbar() {
   const documentName = useJsonStore((s) => s.documentName);
   const pushToast = useJsonStore((s) => s.pushToast);
 
+  const schemaName = useJsonStore((s) => s.schemaName);
+  const loadSchema = useJsonStore((s) => s.loadSchema);
+  const clearSchema = useJsonStore((s) => s.clearSchema);
+
   const [pasteOpen, setPasteOpen] = useState(false);
   const [pasteText, setPasteText] = useState("");
   const [pasteError, setPasteError] = useState<string | null>(null);
+
+  const [schemaOpen, setSchemaOpen] = useState(false);
+  const [schemaText, setSchemaText] = useState("");
+  const [schemaError, setSchemaError] = useState<string | null>(null);
+  const [schemaFileName, setSchemaFileName] = useState<string | null>(null);
+  const schemaFileInputRef = useRef<HTMLInputElement>(null);
 
   const handlePasteSubmit = () => {
     try {
@@ -46,6 +56,46 @@ export function Toolbar() {
     } catch (err) {
       pushToast("error", `Cannot format: ${(err as Error).message}`);
     }
+  };
+
+  const openSchemaModal = () => {
+    setSchemaText("");
+    setSchemaError(null);
+    setSchemaFileName(null);
+    setSchemaOpen(true);
+  };
+
+  const handleSchemaFile = (e: ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+    setSchemaFileName(file.name);
+    setSchemaError(null);
+    file
+      .text()
+      .then((text) => {
+        setSchemaText(text);
+      })
+      .catch((err) => {
+        setSchemaError(`Could not read file: ${(err as Error).message}`);
+      });
+  };
+
+  const handleSchemaSubmit = () => {
+    try {
+      loadSchema(schemaText, schemaFileName ?? "schema.json");
+      setSchemaOpen(false);
+      setSchemaText("");
+      setSchemaFileName(null);
+      setSchemaError(null);
+      pushToast("success", "Schema loaded");
+    } catch (err) {
+      setSchemaError((err as Error).message);
+    }
+  };
+
+  const handleClearSchema = () => {
+    clearSchema();
+    pushToast("info", "Schema cleared");
   };
 
   return (
@@ -96,6 +146,27 @@ export function Toolbar() {
         >
           Copy Path
         </button>
+        <div className="toolbar-divider" />
+        <button
+          className="toolbar-btn"
+          onClick={openSchemaModal}
+          title="Load a JSON Schema to validate the document"
+        >
+          {schemaName ? "Replace Schema…" : "Schema…"}
+        </button>
+        {schemaName && (
+          <span className="toolbar-schema-chip" title={`Schema: ${schemaName}`}>
+            <span className="toolbar-schema-chip-label">{schemaName}</span>
+            <button
+              className="toolbar-schema-chip-clear"
+              onClick={handleClearSchema}
+              title="Clear schema"
+              aria-label="Clear schema"
+            >
+              ×
+            </button>
+          </span>
+        )}
         <div className="toolbar-spacer" />
         <span className="toolbar-doc" title={documentName}>
           {documentName}
@@ -143,6 +214,74 @@ export function Toolbar() {
                 disabled={!pasteText.trim()}
               >
                 Load
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {schemaOpen && (
+        <div
+          className="modal-backdrop"
+          onMouseDown={(e) => {
+            if (e.target === e.currentTarget) {
+              setSchemaOpen(false);
+              setSchemaError(null);
+            }
+          }}
+        >
+          <div className="modal" role="dialog" aria-label="Load JSON Schema">
+            <div className="modal-header">Load JSON Schema</div>
+            <div className="modal-body">
+              <div className="modal-row">
+                <button
+                  className="btn small"
+                  onClick={() => schemaFileInputRef.current?.click()}
+                  title="Upload a JSON Schema file"
+                >
+                  Upload file…
+                </button>
+                <input
+                  ref={schemaFileInputRef}
+                  type="file"
+                  accept="application/json,.json"
+                  style={{ display: "none" }}
+                  onChange={handleSchemaFile}
+                />
+                {schemaFileName && (
+                  <span className="modal-row-info" title={schemaFileName}>
+                    {schemaFileName}
+                  </span>
+                )}
+              </div>
+              <textarea
+                className="input textarea"
+                placeholder='{"type": "object", "properties": {"name": {"type": "string"}}}'
+                value={schemaText}
+                onChange={(e) => {
+                  setSchemaText(e.target.value);
+                  setSchemaError(null);
+                }}
+                autoFocus
+              />
+              {schemaError && <div className="modal-error">{schemaError}</div>}
+            </div>
+            <div className="modal-footer">
+              <button
+                className="btn"
+                onClick={() => {
+                  setSchemaOpen(false);
+                  setSchemaError(null);
+                }}
+              >
+                Cancel
+              </button>
+              <button
+                className="btn primary"
+                onClick={handleSchemaSubmit}
+                disabled={!schemaText.trim()}
+              >
+                Load Schema
               </button>
             </div>
           </div>

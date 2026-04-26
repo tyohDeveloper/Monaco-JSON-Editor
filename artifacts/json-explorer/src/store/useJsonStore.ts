@@ -1,4 +1,6 @@
 import { create } from "zustand";
+import { createAjvValidator, type Validator } from "vanilla-jsoneditor";
+import addFormats from "ajv-formats";
 import type { JsonPath, JsonValue } from "../lib/jsonPath";
 import { getAtPath, pathsEqual } from "../lib/jsonPath";
 import {
@@ -15,6 +17,12 @@ export interface Toast {
   id: number;
   kind: ToastKind;
   message: string;
+}
+
+export interface SchemaError {
+  path: JsonPath;
+  message: string;
+  severity: "warning" | "error" | "info" | string;
 }
 
 export interface JsonState {
@@ -34,6 +42,19 @@ export interface JsonState {
   // expand/collapse all nodes.
   expandAllTick: number;
   collapseAllTick: number;
+
+  // JSON Schema state
+  schema: JsonValue | null;
+  schemaName: string | null;
+  // Errors derived from validating `doc` against `schema`. Empty when no
+  // schema is loaded or the document validates cleanly.
+  schemaErrors: SchemaError[];
+  // Set when the supplied schema text is not valid JSON, or ajv refuses it.
+  schemaLoadError: string | null;
+  // Set when running the validator on the current document throws (e.g.
+  // an unsupported keyword surfaces only at validate time). Distinct from
+  // load errors and from validation errors.
+  schemaRuntimeError: string | null;
 
   // Doc + selection
   setDoc: (next: JsonValue, name?: string) => void;
@@ -61,11 +82,99 @@ export interface JsonState {
   // Toolbar utilities
   loadSample: () => void;
 
+  // Schema actions
+  loadSchema: (text: string, name?: string) => void;
+  clearSchema: () => void;
+
   pushToast: (kind: ToastKind, message: string) => void;
   dismissToast: (id: number) => void;
 }
 
 let toastCounter = 0;
+
+// Cache the ajv validator so we don't recompile the schema on every doc edit.
+let cachedSchema: JsonValue | null = null;
+let cachedValidator: Validator | null = null;
+
+function getValidator(schema: JsonValue | null): Validator | null {
+  if (schema === cachedSchema) return cachedValidator;
+  cachedSchema = schema;
+  if (schema === null) {
+    cachedValidator = null;
+  } else {
+    try {
+      cachedValidator = createAjvValidator({
+        schema: schema as Parameters<typeof createAjvValidator>[0]["schema"],
+        ajvOptions: { allErrors: true, strict: false },
+        onCreateAjv: (ajv) => {
+          // Register the standard JSON Schema formats (email, date,
+          // date-time, uri, uuid, etc.) so schemas using `format` keywords
+          // don't fail to compile.
+          (addFormats as unknown as (a: unknown) => void)(ajv);
+        },
+      });
+    } catch {
+      cachedValidator = null;
+    }
+  }
+  return cachedValidator;
+}
+
+export function getSchemaValidator(schema: JsonValue | null): Validator | null {
+  return getValidator(schema);
+}
+
+function normalizeSegment(seg: string | number): string | number {
+  if (typeof seg === "number") return seg;
+  if (/^(0|[1-9]\d*)$/.test(seg)) {
+    const n = Number(seg);
+    if (Number.isFinite(n)) return n;
+  }
+  return seg;
+}
+
+interface ComputedSchemaResult {
+  errors: SchemaError[];
+  runtimeError: string | null;
+}
+
+function computeSchemaErrors(
+  doc: JsonValue,
+  schema: JsonValue | null,
+): ComputedSchemaResult {
+  if (schema === null) return { errors: [], runtimeError: null };
+  const validator = getValidator(schema);
+  if (!validator) {
+    return {
+      errors: [],
+      runtimeError: "Schema validator could not be built",
+    };
+  }
+  let raw: ReturnType<Validator>;
+  try {
+    raw = validator(doc);
+  } catch (e) {
+    return { errors: [], runtimeError: (e as Error).message };
+  }
+  const errors = raw.map((e) => ({
+    path: (e.path as readonly (string | number)[]).map(normalizeSegment),
+    message: e.message,
+    severity: e.severity,
+  }));
+  return { errors, runtimeError: null };
+}
+
+function schemaErrorsEqual(a: SchemaError[], b: SchemaError[]): boolean {
+  if (a === b) return true;
+  if (a.length !== b.length) return false;
+  for (let i = 0; i < a.length; i++) {
+    const x = a[i]!;
+    const y = b[i]!;
+    if (x.message !== y.message || x.severity !== y.severity) return false;
+    if (!pathsEqual(x.path, y.path)) return false;
+  }
+  return true;
+}
 
 export const useJsonStore = create<JsonState>((set, get) => ({
   doc: SAMPLE_DOC,
@@ -78,6 +187,12 @@ export const useJsonStore = create<JsonState>((set, get) => ({
 
   expandAllTick: 0,
   collapseAllTick: 0,
+
+  schema: null,
+  schemaName: null,
+  schemaErrors: [],
+  schemaLoadError: null,
+  schemaRuntimeError: null,
 
   setDoc: (next, name) =>
     set((s) => ({
@@ -219,6 +334,51 @@ export const useJsonStore = create<JsonState>((set, get) => ({
       validationError: null,
     }),
 
+  loadSchema: (text, name) => {
+    let parsed: JsonValue;
+    try {
+      parsed = JSON.parse(text) as JsonValue;
+    } catch (e) {
+      const msg = (e as Error).message;
+      set({ schemaLoadError: `Invalid JSON: ${msg}` });
+      throw new Error(`Invalid JSON: ${msg}`);
+    }
+    if (parsed === null || typeof parsed !== "object") {
+      const msg = "Schema must be a JSON object";
+      set({ schemaLoadError: msg });
+      throw new Error(msg);
+    }
+    // Try to compile up-front so we can surface ajv errors here instead of
+    // failing later inside the editor.
+    try {
+      cachedSchema = null;
+      cachedValidator = null;
+      const v = getValidator(parsed);
+      if (!v) throw new Error("Could not build validator from schema");
+      v(get().doc);
+    } catch (e) {
+      cachedSchema = null;
+      cachedValidator = null;
+      const msg = (e as Error).message;
+      set({ schemaLoadError: `Invalid schema: ${msg}` });
+      throw new Error(`Invalid schema: ${msg}`);
+    }
+    set({
+      schema: parsed,
+      schemaName: name ?? "schema.json",
+      schemaLoadError: null,
+    });
+  },
+
+  clearSchema: () =>
+    set({
+      schema: null,
+      schemaName: null,
+      schemaErrors: [],
+      schemaLoadError: null,
+      schemaRuntimeError: null,
+    }),
+
   pushToast: (kind, message) => {
     const id = ++toastCounter;
     set((s) => ({ toasts: [...s.toasts, { id, kind, message }] }));
@@ -230,6 +390,19 @@ export const useJsonStore = create<JsonState>((set, get) => ({
   dismissToast: (id) =>
     set((s) => ({ toasts: s.toasts.filter((t) => t.id !== id) })),
 }));
+
+// Recompute schema errors whenever the doc or schema changes.
+useJsonStore.subscribe((state, prev) => {
+  if (state.doc === prev.doc && state.schema === prev.schema) return;
+  const { errors, runtimeError } = computeSchemaErrors(state.doc, state.schema);
+  const errorsChanged = !schemaErrorsEqual(errors, state.schemaErrors);
+  const runtimeChanged = runtimeError !== state.schemaRuntimeError;
+  if (!errorsChanged && !runtimeChanged) return;
+  useJsonStore.setState({
+    schemaErrors: errors,
+    schemaRuntimeError: runtimeError,
+  });
+});
 
 function isAncestor(ancestor: JsonPath, descendant: JsonPath): boolean {
   if (ancestor.length >= descendant.length) return false;

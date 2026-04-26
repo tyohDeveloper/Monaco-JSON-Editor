@@ -6,11 +6,13 @@ import {
   isJSONContent,
   isTextContent,
   type Content,
+  type JSONEditorPropsOptional,
   type JSONEditorSelection,
   type JSONSelection,
+  type Validator,
 } from "vanilla-jsoneditor";
 
-import { useJsonStore } from "../../store/useJsonStore";
+import { useJsonStore, getSchemaValidator } from "../../store/useJsonStore";
 import type { JsonPath, JsonValue } from "../../lib/jsonPath";
 
 type VjeJsonPath = string[];
@@ -21,6 +23,7 @@ interface EditorHandle {
   select?: (s: JSONEditorSelection | undefined) => void;
   expand?: (path: VjeJsonPath, callback?: (path: VjeJsonPath) => boolean) => void;
   collapse?: (path: VjeJsonPath, recursive?: boolean) => void;
+  updateProps?: (props: JSONEditorPropsOptional) => void;
   destroy: () => void;
 }
 
@@ -71,10 +74,13 @@ export function JsonTreePane() {
   const setSelectedPath = useJsonStore((s) => s.setSelectedPath);
   const expandAllTick = useJsonStore((s) => s.expandAllTick);
   const collapseAllTick = useJsonStore((s) => s.collapseAllTick);
+  const schema = useJsonStore((s) => s.schema);
 
   // Mount editor once
   useEffect(() => {
     if (!containerRef.current) return;
+    const initialValidator: Validator | undefined =
+      getSchemaValidator(useJsonStore.getState().schema) ?? undefined;
     const editor = createJSONEditor({
       target: containerRef.current,
       props: {
@@ -85,6 +91,7 @@ export function JsonTreePane() {
         askToFormat: false,
         readOnly: false,
         content: { json: useJsonStore.getState().doc as unknown },
+        validator: initialValidator,
         onChange: (updatedContent: Content) => {
           let nextJson: unknown;
           if (isJSONContent(updatedContent)) {
@@ -135,6 +142,19 @@ export function JsonTreePane() {
       /* ignore */
     }
   }, [doc]);
+
+  // Push validator into editor when the schema changes
+  useEffect(() => {
+    const e = editorRef.current;
+    if (!e || !e.updateProps) return;
+    const validator: Validator | undefined =
+      getSchemaValidator(schema) ?? undefined;
+    try {
+      e.updateProps({ validator });
+    } catch {
+      /* ignore */
+    }
+  }, [schema]);
 
   // Expand all on tick change
   useEffect(() => {

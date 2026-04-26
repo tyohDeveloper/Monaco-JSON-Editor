@@ -4,6 +4,7 @@ import { PaneLayout } from "./PaneLayout";
 import { JsonTreePane } from "../tree/JsonTreePane";
 import { InspectorPane } from "../inspector/InspectorPane";
 import { SourcePane } from "../source/SourcePane";
+import { SchemaErrorsPanel } from "../schema/SchemaErrorsPanel";
 import { useJsonStore } from "../../store/useJsonStore";
 
 function ToastStack() {
@@ -39,6 +40,7 @@ export function AppShell() {
         middle={<InspectorPane />}
         right={<SourcePane />}
       />
+      <SchemaErrorsPanel />
       <StatusBar />
       <ToastStack />
     </div>

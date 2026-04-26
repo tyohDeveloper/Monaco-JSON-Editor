@@ -27,6 +27,9 @@ export function StatusBar() {
   const doc = useJsonStore((s) => s.doc);
   const selectedPath = useJsonStore((s) => s.selectedPath);
   const validationError = useJsonStore((s) => s.validationError);
+  const schema = useJsonStore((s) => s.schema);
+  const schemaErrors = useJsonStore((s) => s.schemaErrors);
+  const schemaRuntimeError = useJsonStore((s) => s.schemaRuntimeError);
 
   const selectedValue = getAtPath(doc, selectedPath);
   const t = nodeType(selectedValue);
@@ -66,6 +69,32 @@ export function StatusBar() {
           Valid
         </span>
       )}
+      {schema !== null &&
+        (schemaRuntimeError ? (
+          <span
+            className="statusbar-item error"
+            title={`Schema validator error: ${schemaRuntimeError}`}
+          >
+            <span className="statusbar-dot err" />
+            Schema validator error
+          </span>
+        ) : schemaErrors.length === 0 ? (
+          <span
+            className="statusbar-item ok"
+            title="Document validates against the loaded JSON Schema"
+          >
+            <span className="statusbar-dot ok" />
+            Valid against schema
+          </span>
+        ) : (
+          <span
+            className="statusbar-item error"
+            title={`${schemaErrors.length} schema validation ${schemaErrors.length === 1 ? "error" : "errors"}`}
+          >
+            <span className="statusbar-dot err" />
+            {schemaErrors.length} {schemaErrors.length === 1 ? "error" : "errors"} against schema
+          </span>
+        ))}
     </div>
   );
 }
