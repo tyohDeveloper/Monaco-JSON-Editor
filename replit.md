@@ -42,3 +42,11 @@ See the `pnpm-workspace` skill for workspace structure, TypeScript setup, and pa
   - Expand All / Collapse All broadcast tick counters via the store; the tree pane subscribes and calls vanilla-jsoneditor's imperative `expand` / `collapse` methods.
   - Store mutators throw on failure; UI callers wrap in try/catch and push success or error toasts.
   - JSON Schema validation: optional. Schema is loaded via the `Schema…` toolbar button (paste or upload). Validation uses Ajv (`createAjvValidator` from vanilla-jsoneditor) with `ajv-formats` registered so format keywords like `email`, `date`, `uri`, `uuid` work. Validation re-runs whenever doc or schema changes; errors live in `useJsonStore.schemaErrors` and are also passed to vanilla-jsoneditor as a `validator` so they're inline-marked on tree nodes. The Schema-errors panel lists each error (path + message), is collapsible, and clicking a row jumps the selection to that path. The schema can be cleared from either the panel header or the toolbar chip.
+
+## Coding & architecture standards
+
+All code in this repository follows **[`docs/CODING-STANDARDS.md`](docs/CODING-STANDARDS.md)** — the binding rules for layer boundaries, purity, function and file size limits, naming, data externalization, testing, and dependency budgets. Read it before making changes.
+
+Key hard limits: exported function bodies ≤ 20 lines; one export per pure-logic file; pure-core files ≤ 100 lines, other pure/state/controller files ≤ 150, view files ≤ 250 with ≤ 80 lines of markup in the return. §0 of that file maps those layer roles to this repository's actual directories.
+
+The canonical source of truth is the `programming` project knowledge wiki page `concepts/coding-architecture-standards`; the in-repo file is a derived copy. Amend the wiki first, then propagate here.
